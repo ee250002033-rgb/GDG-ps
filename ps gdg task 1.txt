@@ -1,0 +1,60 @@
+
+import pandas as pd
+from chronos import ChronosPipeline
+import torch 
+
+pipeline = ChronosPipeline.from_pretrained(
+    "amazon/chronos-t5-small",
+    device_map="auto"
+)
+
+
+df = pd.read_csv("/content/mandm 1 year stock market.csv")
+
+df['Date'] = pd.to_datetime(df['DATE'])
+
+df['CLOSE'] = df['CLOSE'].str.replace(',', '').astype(float)
+
+df = df.sort_values('Date')
+
+prices = df['CLOSE'].values
+context = [torch.tensor(prices, dtype=torch.float32)] 
+forecast = pipeline.predict(
+    context,
+    prediction_length=30,
+    num_samples=20
+)
+
+predicted_mean = forecast[0].mean(axis=0)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+plt.figure(figsize=(14,5))
+
+
+plt.plot(prices, label="Historical Price")
+
+
+future_x = np.arange(len(prices), len(prices) + 30)
+plt.plot(future_x, predicted_mean, label="Chronos Forecast")
+
+plt.title("Mahindra Stock Price Forecast (Chronos)")
+plt.xlabel("Days")
+plt.ylabel("Price")
+plt.legend()
+plt.grid(True)
+plt.show()
+lower = forecast[0].quantile(0.1, axis=0)
+upper = forecast[0].quantile(0.9, axis=0)
+
+plt.figure(figsize=(14,5))
+plt.plot(prices, label="History")
+
+future_x = np.arange(len(prices), len(prices) + 30)
+plt.plot(future_x, predicted_mean, label="Forecast")
+
+plt.fill_between(future_x, lower, upper, alpha=0.3, label="Confidence Range")
+
+plt.legend()
+plt.show()
