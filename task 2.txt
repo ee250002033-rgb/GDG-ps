@@ -1,0 +1,84 @@
+!pip install -q transformers sentence-transformers requests torch accelerate bitsandbytes
+
+import requests
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from transformers import pipeline
+from sklearn.metrics.pairwise import cosine_similarity
+
+NEWS_API_KEY = ""
+
+def fetch_news(query="stock market"):
+    if NEWS_API_KEY == "":
+        return ["No live financial news available. Answer using general market knowledge."]
+
+    try:
+        url = f"https://api.polygon.io/v2/reference/news?ticker={query.upper()}&apiKey={NEWS_API_KEY}"
+        data = requests.get(url).json()
+
+        articles = []
+        for item in data.get("results", [])[:5]:
+            articles.append(item.get("title", "") + " - " + item.get("description", ""))
+
+        return articles if articles else ["No recent financial news found."]
+    except:
+        return ["Unable to retrieve live news. Answer using general financial knowledge."]
+
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
+
+def retrieve_news(question):
+    docs = fetch_news(question)
+    embeddings = embedder.encode(docs)
+    q_embed = embedder.encode([question])
+    sims = cosine_similarity(q_embed, embeddings)[0]
+    return docs[int(np.argmax(sims))]
+
+print("Loading LLM...")
+
+llm = pipeline(
+    "text-generation",
+    model="mistralai/Mistral-7B-Instruct-v0.2",
+    device_map="auto",
+    torch_dtype="auto"
+)
+
+print("LLM Ready!")
+
+def stock_rag_bot(question):
+    context = retrieve_news(question)
+
+    prompt = f"""
+You are a professional financial analyst.
+
+Relevant context:
+{context}
+
+User question:
+{question}
+
+Rules:
+- Answer only the question
+- No extra questions
+- No repeating input
+- Keep response short (3–5 lines)
+- Sound natural and human
+
+Answer:
+"""
+
+    output = llm(prompt, max_new_tokens=150, temperature=0.4)
+    return output[0]["generated_text"].strip()
+
+print("\nLIVE STOCK RAG BOT READY")
+print("Type 'exit' to quit")
+
+while True:
+    query = input("\nAsk about a stock: ")
+
+    if query.lower() == "exit":
+        print("Goodbye.")
+        break
+
+    answer = stock_rag_bot(query)
+    print("\nANSWER:\n")
+    print(answer)
